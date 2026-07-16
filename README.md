@@ -144,7 +144,7 @@ Select a package in EA's Browser before opening the add-in menu.
 
 ### A generated type name looks different
 
-Names are converted to UML-friendly PascalCase. Punctuation and whitespace are removed, and nested inferred types are prefixed with their owning class name.
+Names are converted to UML-friendly PascalCase and punctuation or whitespace is removed. Nested types use their property or schema title directly. The owning class name is added only when two generated definitions would otherwise have the same name.
 
 ## Building from source
 

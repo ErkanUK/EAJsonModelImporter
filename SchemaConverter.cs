@@ -78,7 +78,7 @@ internal sealed class SchemaConverter
 
         if (schema["enum"] is JsonArray values)
         {
-            string enumName = TypeName(owner + " " + name + " Enum");
+            string enumName = UniqueDefinitionName(name + " Enum", owner);
             if (!_enums.ContainsKey(enumName))
             {
                 var item = new ImportEnum { Name = enumName, Description = description };
@@ -97,7 +97,9 @@ internal sealed class SchemaConverter
         }
         if (type == "object")
         {
-            string nested = TypeName(Text(schema, "title") ?? owner + " " + name);
+            string nested = Text(schema, "title") is { } title
+                ? TypeName(title)
+                : UniqueDefinitionName(name, owner);
             ParseClass(nested, schema);
             return Property(name, nested, description, required, false, true);
         }
@@ -110,7 +112,7 @@ internal sealed class SchemaConverter
     {
         var refs = choices.OfType<JsonObject>().Select(x => Text(x, "$ref")).Where(x => x is not null).Select(x => ReferenceName(x!)).ToList();
         if (refs.Count == 1) return Property(name, refs[0], description, required, false, true);
-        string union = TypeName(owner + " " + name + " Choice");
+        string union = UniqueDefinitionName(name + " Choice", owner);
         var cls = GetClass(union);
         foreach (var choice in refs) if (!cls.Parents.Contains(choice)) cls.Parents.Add(choice);
         return Property(name, union, description, required, false, true);
@@ -129,7 +131,7 @@ internal sealed class SchemaConverter
     {
         if (value is JsonObject child)
         {
-            string target = TypeName(owner + " " + name);
+            string target = UniqueDefinitionName(name, owner);
             InferObject(child, target, "Inferred from JSON/YAML object.");
             return Property(name, target, "", true, false, true);
         }
@@ -138,7 +140,7 @@ internal sealed class SchemaConverter
             var sample = array.FirstOrDefault(x => x is not null);
             if (sample is JsonObject sampleObject)
             {
-                string target = TypeName(owner + " " + Singular(name));
+                string target = UniqueDefinitionName(Singular(name), owner);
                 InferObject(sampleObject, target, "Inferred from array items.");
                 return Property(name, target, "", true, true, true);
             }
@@ -152,6 +154,17 @@ internal sealed class SchemaConverter
         name = TypeName(name);
         if (!_classes.TryGetValue(name, out var cls)) _classes[name] = cls = new ImportClass { Name = name };
         return cls;
+    }
+
+    private string UniqueDefinitionName(string preferred, string owner)
+    {
+        string candidate = TypeName(preferred);
+        if (!_classes.ContainsKey(candidate) && !_enums.ContainsKey(candidate)) return candidate;
+        string qualified = TypeName(owner + " " + preferred);
+        if (!_classes.ContainsKey(qualified) && !_enums.ContainsKey(qualified)) return qualified;
+        int suffix = 2;
+        while (_classes.ContainsKey(qualified + suffix) || _enums.ContainsKey(qualified + suffix)) suffix++;
+        return qualified + suffix;
     }
 
     private static ImportProperty Property(string name, string type, string description, bool required, bool many, bool reference) =>

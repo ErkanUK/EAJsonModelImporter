@@ -28,8 +28,15 @@ Assert(model.Enums.Any(x => x.Values.SequenceEqual(["open", "closed"])), "enumer
 var plain = JsonNode.Parse("""{"id":7,"customer":{"name":"Ada"},"lines":[{"sku":"A1","quantity":2}]}""")!;
 var inferred = new SchemaConverter().Convert(plain, "order");
 Assert(inferred.Classes.Any(x => x.Name == "Order"), "plain JSON root");
-Assert(inferred.Classes.Any(x => x.Name == "OrderCustomer"), "nested object");
-Assert(inferred.Classes.Any(x => x.Name == "OrderLine"), "array item class");
+Assert(inferred.Classes.Any(x => x.Name == "Customer"), "nested object without owner prefix");
+Assert(inferred.Classes.Any(x => x.Name == "Line"), "array item class without owner prefix");
+
+var prefixed = JsonNode.Parse("""{"linkml":{"classes":{"Person":{"name":"Person"}}}}""")!;
+var cleanNames = new SchemaConverter().Convert(prefixed, "LDMLoadModel");
+Assert(cleanNames.Classes.Any(x => x.Name == "Linkml"), "first nested name");
+Assert(cleanNames.Classes.Any(x => x.Name == "Classes"), "deep nested name");
+Assert(cleanNames.Classes.Any(x => x.Name == "Person"), "leaf nested name");
+Assert(cleanNames.Classes.Where(x => x.Name != "LDMLoadModel").All(x => !x.Name.StartsWith("LDMLoadModel")), "no repeated root prefix");
 
 var yaml = """
 $schema: https://json-schema.org/draft/2020-12/schema
