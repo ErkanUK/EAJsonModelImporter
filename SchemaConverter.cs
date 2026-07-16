@@ -123,7 +123,16 @@ internal sealed class SchemaConverter
         var cls = GetClass(name);
         cls.Description = description;
         foreach (var (propertyName, value) in obj)
+        {
+            if (IsDefinitionContainer(propertyName) && value is JsonObject definitions)
+            {
+                foreach (var (definitionName, definitionNode) in definitions)
+                    if (definitionNode is JsonObject definition)
+                        InferObject(definition, TypeName(definitionName), "Inferred from the '" + propertyName + "' definition container.");
+                continue;
+            }
             cls.Properties.Add(InferProperty(name, propertyName, value));
+        }
         return cls;
     }
 
@@ -160,12 +169,23 @@ internal sealed class SchemaConverter
     {
         string candidate = TypeName(preferred);
         if (!_classes.ContainsKey(candidate) && !_enums.ContainsKey(candidate)) return candidate;
-        string qualified = TypeName(owner + " " + preferred);
+        string qualified = IsStructuralOwner(owner)
+            ? candidate + "Type"
+            : TypeName(owner + " " + preferred);
         if (!_classes.ContainsKey(qualified) && !_enums.ContainsKey(qualified)) return qualified;
         int suffix = 2;
         while (_classes.ContainsKey(qualified + suffix) || _enums.ContainsKey(qualified + suffix)) suffix++;
         return qualified + suffix;
     }
+
+    private static bool IsDefinitionContainer(string name) => name.Equals("classes", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("definitions", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("$defs", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("schemas", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsStructuralOwner(string name) => IsDefinitionContainer(name)
+        || name.Equals("properties", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("components", StringComparison.OrdinalIgnoreCase);
 
     private static ImportProperty Property(string name, string type, string description, bool required, bool many, bool reference) =>
         new() { Name = name, Type = type, Description = description, Required = required, Many = many, IsReference = reference };

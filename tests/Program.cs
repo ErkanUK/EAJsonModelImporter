@@ -34,9 +34,15 @@ Assert(inferred.Classes.Any(x => x.Name == "Line"), "array item class without ow
 var prefixed = JsonNode.Parse("""{"linkml":{"classes":{"Person":{"name":"Person"}}}}""")!;
 var cleanNames = new SchemaConverter().Convert(prefixed, "LDMLoadModel");
 Assert(cleanNames.Classes.Any(x => x.Name == "Linkml"), "first nested name");
-Assert(cleanNames.Classes.Any(x => x.Name == "Classes"), "deep nested name");
 Assert(cleanNames.Classes.Any(x => x.Name == "Person"), "leaf nested name");
+Assert(cleanNames.Classes.All(x => x.Name != "Classes"), "classes container is flattened");
 Assert(cleanNames.Classes.Where(x => x.Name != "LDMLoadModel").All(x => !x.Name.StartsWith("LDMLoadModel")), "no repeated root prefix");
+
+var classContainer = JsonNode.Parse("""{"classes":{"TransformerLoadForecast":{"name":"Load forecast"},"TransformerActual":{"name":"Actual"}}}""")!;
+var flattened = new SchemaConverter().Convert(classContainer, "Model");
+Assert(flattened.Classes.Any(x => x.Name == "TransformerLoadForecast"), "classes container child name");
+Assert(flattened.Classes.Any(x => x.Name == "TransformerActual"), "second classes container child name");
+Assert(flattened.Classes.All(x => !x.Name.StartsWith("Classes")), "no Classes prefix");
 
 var yaml = """
 $schema: https://json-schema.org/draft/2020-12/schema

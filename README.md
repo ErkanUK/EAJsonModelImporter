@@ -146,6 +146,8 @@ Select a package in EA's Browser before opening the add-in menu.
 
 Names are converted to UML-friendly PascalCase and punctuation or whitespace is removed. Nested types use their property or schema title directly. The owning class name is added only when two generated definitions would otherwise have the same name.
 
+Structural definition containers named `classes`, `definitions`, `$defs`, or `schemas` are flattened. Their child keys become UML class names directly, so a `classes.TransformerLoadForecast` entry is imported as `TransformerLoadForecast`, not `ClassesTransformerLoadForecast`.
+
 ## Building from source
 
 The project targets `net9.0-windows` and references `lib/Interop.EA.dll`.
