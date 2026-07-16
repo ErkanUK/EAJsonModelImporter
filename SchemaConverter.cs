@@ -1,0 +1,166 @@
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+
+namespace EAJsonModelImporter;
+
+internal sealed class SchemaConverter
+{
+    private readonly Dictionary<string, ImportClass> _classes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, ImportEnum> _enums = new(StringComparer.OrdinalIgnoreCase);
+    private ImportModel _model = null!;
+
+    public ImportModel Convert(JsonNode root, string fallbackName)
+    {
+        var obj = root as JsonObject ?? throw new InvalidDataException("The root must be an object.");
+        string name = TypeName(Text(obj, "title") ?? fallbackName);
+        _model = new ImportModel
+        {
+            Name = name,
+            Description = Text(obj, "description") ?? "",
+            Version = Text(obj, "version") ?? Text(obj, "$version") ?? ""
+        };
+
+        if (LooksLikeSchema(obj)) ConvertSchema(obj, name);
+        else InferObject(obj, name, "");
+        _model.Classes.AddRange(_classes.Values.OrderBy(x => x.Name));
+        _model.Enums.AddRange(_enums.Values.OrderBy(x => x.Name));
+        return _model;
+    }
+
+    private void ConvertSchema(JsonObject root, string rootName)
+    {
+        foreach (var containerName in new[] { "$defs", "definitions" })
+        {
+            if (root[containerName] is not JsonObject definitions) continue;
+            foreach (var (name, node) in definitions)
+                if (node is JsonObject schema) ParseClass(TypeName(name), schema);
+        }
+        ParseClass(rootName, root);
+    }
+
+    private ImportClass ParseClass(string name, JsonObject schema)
+    {
+        name = TypeName(Text(schema, "title") ?? name);
+        if (_classes.TryGetValue(name, out var existing)) return existing;
+        var cls = new ImportClass { Name = name, Description = Text(schema, "description") ?? "" };
+        _classes[name] = cls;
+
+        if (schema["allOf"] is JsonArray allOf)
+        {
+            foreach (var part in allOf.OfType<JsonObject>())
+            {
+                if (Text(part, "$ref") is { } parent) cls.Parents.Add(ReferenceName(parent));
+                else ParseProperties(cls, part);
+            }
+        }
+        ParseProperties(cls, schema);
+        return cls;
+    }
+
+    private void ParseProperties(ImportClass cls, JsonObject schema)
+    {
+        var required = schema["required"] is JsonArray array
+            ? array.Select(x => x?.GetValue<string>() ?? "").ToHashSet(StringComparer.Ordinal)
+            : [];
+        if (schema["properties"] is not JsonObject properties) return;
+        foreach (var (propertyName, node) in properties)
+        {
+            if (node is not JsonObject property) continue;
+            cls.Properties.Add(ParseSchemaProperty(cls.Name, propertyName, property, required.Contains(propertyName)));
+        }
+    }
+
+    private ImportProperty ParseSchemaProperty(string owner, string name, JsonObject schema, bool required)
+    {
+        string description = Text(schema, "description") ?? "";
+        if (Text(schema, "$ref") is { } reference)
+            return Property(name, ReferenceName(reference), description, required, false, true);
+
+        if (schema["enum"] is JsonArray values)
+        {
+            string enumName = TypeName(owner + " " + name + " Enum");
+            if (!_enums.ContainsKey(enumName))
+            {
+                var item = new ImportEnum { Name = enumName, Description = description };
+                item.Values.AddRange(values.Select(x => x?.ToString() ?? "null"));
+                _enums[enumName] = item;
+            }
+            return Property(name, enumName, description, required, false, false);
+        }
+
+        string type = Text(schema, "type") ?? (schema["properties"] is not null ? "object" : "string");
+        if (type == "array")
+        {
+            var items = schema["items"] as JsonObject ?? new JsonObject { ["type"] = "string" };
+            var inner = ParseSchemaProperty(owner, name, items, required);
+            return Property(name, inner.Type, description.Length > 0 ? description : inner.Description, required, true, inner.IsReference);
+        }
+        if (type == "object")
+        {
+            string nested = TypeName(Text(schema, "title") ?? owner + " " + name);
+            ParseClass(nested, schema);
+            return Property(name, nested, description, required, false, true);
+        }
+        if (schema["oneOf"] is JsonArray oneOf) return Choice(owner, name, oneOf, description, required);
+        if (schema["anyOf"] is JsonArray anyOf) return Choice(owner, name, anyOf, description, required);
+        return Property(name, Primitive(type, Text(schema, "format")), description, required, false, false);
+    }
+
+    private ImportProperty Choice(string owner, string name, JsonArray choices, string description, bool required)
+    {
+        var refs = choices.OfType<JsonObject>().Select(x => Text(x, "$ref")).Where(x => x is not null).Select(x => ReferenceName(x!)).ToList();
+        if (refs.Count == 1) return Property(name, refs[0], description, required, false, true);
+        string union = TypeName(owner + " " + name + " Choice");
+        var cls = GetClass(union);
+        foreach (var choice in refs) if (!cls.Parents.Contains(choice)) cls.Parents.Add(choice);
+        return Property(name, union, description, required, false, true);
+    }
+
+    private ImportClass InferObject(JsonObject obj, string name, string description)
+    {
+        var cls = GetClass(name);
+        cls.Description = description;
+        foreach (var (propertyName, value) in obj)
+            cls.Properties.Add(InferProperty(name, propertyName, value));
+        return cls;
+    }
+
+    private ImportProperty InferProperty(string owner, string name, JsonNode? value)
+    {
+        if (value is JsonObject child)
+        {
+            string target = TypeName(owner + " " + name);
+            InferObject(child, target, "Inferred from JSON/YAML object.");
+            return Property(name, target, "", true, false, true);
+        }
+        if (value is JsonArray array)
+        {
+            var sample = array.FirstOrDefault(x => x is not null);
+            if (sample is JsonObject sampleObject)
+            {
+                string target = TypeName(owner + " " + Singular(name));
+                InferObject(sampleObject, target, "Inferred from array items.");
+                return Property(name, target, "", true, true, true);
+            }
+            return Property(name, InferredPrimitive(sample), "", true, true, false);
+        }
+        return Property(name, InferredPrimitive(value), "", true, false, false);
+    }
+
+    private ImportClass GetClass(string name)
+    {
+        name = TypeName(name);
+        if (!_classes.TryGetValue(name, out var cls)) _classes[name] = cls = new ImportClass { Name = name };
+        return cls;
+    }
+
+    private static ImportProperty Property(string name, string type, string description, bool required, bool many, bool reference) =>
+        new() { Name = name, Type = type, Description = description, Required = required, Many = many, IsReference = reference };
+    private static bool LooksLikeSchema(JsonObject o) => o.ContainsKey("$schema") || o.ContainsKey("$defs") || o.ContainsKey("definitions") || o.ContainsKey("properties") || o.ContainsKey("allOf");
+    private static string? Text(JsonObject o, string key) => o[key] is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
+    private static string ReferenceName(string value) => TypeName(Uri.UnescapeDataString(value.Split('/').Last()));
+    private static string TypeName(string value) => string.Concat(Regex.Split(value, "[^A-Za-z0-9]+").Where(x => x.Length > 0).Select(x => char.ToUpperInvariant(x[0]) + x[1..]));
+    private static string Singular(string value) => value.EndsWith("ies") ? value[..^3] + "y" : value.EndsWith("s") && value.Length > 1 ? value[..^1] : value;
+    private static string Primitive(string type, string? format) => format?.ToLowerInvariant() switch { "date" => "Date", "date-time" => "DateTime", "uri" or "uri-reference" => "String", _ => type.ToLowerInvariant() switch { "integer" => "Integer", "number" => "Real", "boolean" => "Boolean", "null" => "Object", _ => "String" } };
+    private static string InferredPrimitive(JsonNode? node) => node is null ? "Object" : node.GetValueKind() switch { System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False => "Boolean", System.Text.Json.JsonValueKind.Number => node.ToString().Contains('.') ? "Real" : "Integer", _ => "String" };
+}
