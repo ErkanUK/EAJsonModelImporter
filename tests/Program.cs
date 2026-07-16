@@ -44,6 +44,28 @@ Assert(flattened.Classes.Any(x => x.Name == "TransformerLoadForecast"), "classes
 Assert(flattened.Classes.Any(x => x.Name == "TransformerActual"), "second classes container child name");
 Assert(flattened.Classes.All(x => !x.Name.StartsWith("Classes")), "no Classes prefix");
 
+var linkmlAttributes = JsonNode.Parse("""
+{
+  "classes": {
+    "Terminal": {
+      "description": "A terminal",
+      "attributes": {
+        "description": { "range": "string" },
+        "conductingEquipment": { "range": "ConductingEquipment", "required": true }
+      }
+    },
+    "ConductingEquipment": {
+      "attributes": { "name": { "range": "string", "multivalued": false } }
+    }
+  }
+}
+""")!;
+var attributeModel = new SchemaConverter().Convert(linkmlAttributes, "Grid");
+var terminal = attributeModel.Classes.Single(x => x.Name == "Terminal");
+Assert(attributeModel.Classes.All(x => !x.Name.EndsWith("Attributes")), "attributes container is not a class");
+Assert(terminal.Properties.Any(x => x.Name == "description" && x.Type == "String" && !x.IsReference), "primitive attribute definition");
+Assert(terminal.Properties.Any(x => x.Name == "conductingEquipment" && x.Type == "ConductingEquipment" && x.IsReference && x.Required), "class range association definition");
+
 var yaml = """
 $schema: https://json-schema.org/draft/2020-12/schema
 title: Product Catalogue

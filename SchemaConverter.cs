@@ -121,9 +121,16 @@ internal sealed class SchemaConverter
     private ImportClass InferObject(JsonObject obj, string name, string description)
     {
         var cls = GetClass(name);
-        cls.Description = description;
+        cls.Description = Text(obj, "description") ?? description;
+        if (Text(obj, "is_a") is { } parent && !cls.Parents.Contains(TypeName(parent)))
+            cls.Parents.Add(TypeName(parent));
         foreach (var (propertyName, value) in obj)
         {
+            if (propertyName.Equals("attributes", StringComparison.OrdinalIgnoreCase) && value is JsonObject attributes)
+            {
+                ParseAttributeDefinitions(cls, attributes);
+                continue;
+            }
             if (IsDefinitionContainer(propertyName) && value is JsonObject definitions)
             {
                 foreach (var (definitionName, definitionNode) in definitions)
@@ -131,9 +138,29 @@ internal sealed class SchemaConverter
                         InferObject(definition, TypeName(definitionName), "Inferred from the '" + propertyName + "' definition container.");
                 continue;
             }
+            if (IsClassMetadata(propertyName)) continue;
             cls.Properties.Add(InferProperty(name, propertyName, value));
         }
         return cls;
+    }
+
+    private void ParseAttributeDefinitions(ImportClass cls, JsonObject attributes)
+    {
+        foreach (var (name, node) in attributes)
+        {
+            if (node is not JsonObject definition)
+            {
+                cls.Properties.Add(InferProperty(cls.Name, name, node));
+                continue;
+            }
+            string range = Text(definition, "range") ?? Text(definition, "type") ?? "string";
+            bool required = Boolean(definition, "required") || Integer(definition, "minimum_cardinality") > 0;
+            bool many = Boolean(definition, "multivalued") || Integer(definition, "maximum_cardinality") > 1;
+            string primitive = LinkMlPrimitive(range);
+            bool reference = primitive.Length == 0;
+            cls.Properties.Add(Property(name, reference ? TypeName(range) : primitive,
+                Text(definition, "description") ?? "", required, many, reference));
+        }
     }
 
     private ImportProperty InferProperty(string owner, string name, JsonNode? value)
@@ -186,6 +213,33 @@ internal sealed class SchemaConverter
     private static bool IsStructuralOwner(string name) => IsDefinitionContainer(name)
         || name.Equals("properties", StringComparison.OrdinalIgnoreCase)
         || name.Equals("components", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsClassMetadata(string name) => name.Equals("description", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("is_a", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("class_uri", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("abstract", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("mixins", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("slots", StringComparison.OrdinalIgnoreCase);
+
+    private static bool Boolean(JsonObject obj, string name) => obj[name] is JsonValue value
+        && value.TryGetValue<bool>(out var result) && result;
+    private static int Integer(JsonObject obj, string name)
+    {
+        if (obj[name] is not JsonValue value) return 0;
+        if (value.TryGetValue<int>(out var integer)) return integer;
+        return value.TryGetValue<long>(out var longer) && longer <= int.MaxValue ? (int)longer : 0;
+    }
+    private static string LinkMlPrimitive(string range) => range.ToLowerInvariant() switch
+    {
+        "string" or "str" or "uriorcurie" or "uri" or "ncname" => "String",
+        "integer" or "int" or "long" => "Integer",
+        "float" or "double" or "decimal" => "Real",
+        "boolean" or "bool" => "Boolean",
+        "date" => "Date",
+        "datetime" or "date_time" => "DateTime",
+        "time" => "Time",
+        _ => ""
+    };
 
     private static ImportProperty Property(string name, string type, string description, bool required, bool many, bool reference) =>
         new() { Name = name, Type = type, Description = description, Required = required, Many = many, IsReference = reference };

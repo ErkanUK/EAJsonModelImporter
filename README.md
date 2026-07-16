@@ -148,6 +148,8 @@ Names are converted to UML-friendly PascalCase and punctuation or whitespace is 
 
 Structural definition containers named `classes`, `definitions`, `$defs`, or `schemas` are flattened. Their child keys become UML class names directly, so a `classes.TransformerLoadForecast` entry is imported as `TransformerLoadForecast`, not `ClassesTransformerLoadForecast`.
 
+Within a class definition, an `attributes` section is also flattened. Primitive ranges become UML attributes on the owning class, while ranges that name another class become associations. The importer therefore creates `Terminal` with its properties and associations rather than a separate `TerminalAttributes` class.
+
 ## Building from source
 
 The project targets `net9.0-windows` and references `lib/Interop.EA.dll`.
