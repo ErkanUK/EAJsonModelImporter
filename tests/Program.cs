@@ -122,6 +122,38 @@ Assert(smartMeterEnum.Values.SequenceEqual(["Y", "N"]), "quoted YAML enum values
 Assert(smartMeterEnum.ValueDescriptions["Y"] == "Smart meter installed and active", "YAML enum literal notes");
 Assert(yamlEnumModel.Classes.Single(x => x.Name == "Meter").Properties.Any(x => x.Name == "smart" && !x.IsReference), "YAML enum typed attribute");
 
+var linkmlRelationships = SimpleYaml.Parse("""
+id: https://example.org/network
+name: network_model
+title: Network Model
+prefixes:
+  ex: https://example.org/
+imports:
+  - linkml:types
+classes:
+  SecondarySubstation:
+    attributes:
+      location_tk:
+        range: string
+    relationships:
+      transformers:
+        description: Transformers installed at this substation
+        range: Transformer
+        multivalued: true
+        join_key: location_tk
+    annotations:
+      source_table: substations
+  Transformer:
+    attributes:
+      asset_tk:
+        range: string
+""");
+var relationshipModel = new SchemaConverter().Convert(linkmlRelationships, "fallback");
+var substation = relationshipModel.Classes.Single(x => x.Name == "SecondarySubstation");
+Assert(relationshipModel.Classes.Select(x => x.Name).Order().SequenceEqual(["SecondarySubstation", "Transformer"]), "LinkML metadata does not create classes");
+Assert(substation.Properties.Any(x => x.Name == "transformers" && x.Type == "Transformer" && x.IsReference && x.Many), "LinkML relationship becomes association");
+Assert(relationshipModel.Classes.Count(x => x.Name.Contains("Transformer", StringComparison.OrdinalIgnoreCase)) == 1, "no plural relationship class duplicate");
+
 var yaml = """
 $schema: https://json-schema.org/draft/2020-12/schema
 title: Product Catalogue

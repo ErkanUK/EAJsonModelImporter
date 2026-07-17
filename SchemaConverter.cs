@@ -22,6 +22,7 @@ internal sealed class SchemaConverter
 
         DiscoverEnums(obj);
         if (LooksLikeSchema(obj)) ConvertSchema(obj, name);
+        else if (LooksLikeLinkMl(obj)) ConvertLinkMl(obj);
         else InferObject(obj, name, "");
         _model.Classes.AddRange(_classes.Values.OrderBy(x => x.Name));
         _model.Enums.AddRange(_enums.Values.OrderBy(x => x.Name));
@@ -37,6 +38,14 @@ internal sealed class SchemaConverter
                 if (node is JsonObject schema) ParseDefinition(TypeName(name), schema);
         }
         ParseDefinition(rootName, root);
+    }
+
+    private void ConvertLinkMl(JsonObject root)
+    {
+        if (root["classes"] is not JsonObject classes) return;
+        foreach (var (name, node) in classes)
+            if (node is JsonObject definition)
+                InferObject(definition, TypeName(name), "");
     }
 
     private void ParseDefinition(string name, JsonObject definition)
@@ -179,6 +188,11 @@ internal sealed class SchemaConverter
                 ParseAttributeDefinitions(cls, attributes);
                 continue;
             }
+            if (propertyName.Equals("relationships", StringComparison.OrdinalIgnoreCase) && value is JsonObject relationships)
+            {
+                ParseAttributeDefinitions(cls, relationships);
+                continue;
+            }
             if (IsDefinitionContainer(propertyName) && value is JsonObject definitions)
             {
                 foreach (var (definitionName, definitionNode) in definitions)
@@ -270,6 +284,7 @@ internal sealed class SchemaConverter
         || name.Equals("class_uri", StringComparison.OrdinalIgnoreCase)
         || name.Equals("abstract", StringComparison.OrdinalIgnoreCase)
         || name.Equals("mixins", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("annotations", StringComparison.OrdinalIgnoreCase)
         || name.Equals("slots", StringComparison.OrdinalIgnoreCase);
 
     private static bool Boolean(JsonObject obj, string name) => obj[name] is JsonValue value
@@ -295,6 +310,7 @@ internal sealed class SchemaConverter
     private static ImportProperty Property(string name, string type, string description, bool required, bool many, bool reference) =>
         new() { Name = name, Type = type, Description = description, Required = required, Many = many, IsReference = reference };
     private static bool LooksLikeSchema(JsonObject o) => o.ContainsKey("$schema") || o.ContainsKey("$defs") || o.ContainsKey("definitions") || o.ContainsKey("properties") || o.ContainsKey("allOf");
+    private static bool LooksLikeLinkMl(JsonObject o) => o["classes"] is JsonObject || o["enums"] is JsonObject;
     private static string? Text(JsonObject o, string key) => o[key] is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
     private static string ReferenceName(string value) => TypeName(Uri.UnescapeDataString(value.Split('/').Last()));
     private static string TypeName(string value) => string.Concat(Regex.Split(value, "[^A-Za-z0-9]+").Where(x => x.Length > 0).Select(x => char.ToUpperInvariant(x[0]) + x[1..]));

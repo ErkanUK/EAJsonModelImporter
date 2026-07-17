@@ -151,6 +151,8 @@ Structural definition containers named `classes`, `definitions`, `$defs`, or `sc
 
 Within a class definition, an `attributes` section is also flattened. Primitive ranges become UML attributes on the owning class, while ranges that name another class become associations. The importer therefore creates `Terminal` with its properties and associations rather than a separate `TerminalAttributes` class.
 
+LinkML `relationships` entries are imported as associations on their owning class. Schema metadata such as `prefixes`, `imports`, and `annotations` does not create UML classes.
+
 ## Building from source
 
 The project targets `net9.0-windows` and references `lib/Interop.EA.dll`.
