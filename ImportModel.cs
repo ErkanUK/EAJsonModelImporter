@@ -22,6 +22,7 @@ internal sealed class ImportEnum
     public required string Name { get; init; }
     public string Description { get; init; } = "";
     public List<string> Values { get; } = [];
+    public Dictionary<string, string> ValueDescriptions { get; } = new(StringComparer.Ordinal);
 }
 
 internal sealed class ImportProperty

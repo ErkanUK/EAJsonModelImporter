@@ -20,6 +20,7 @@ internal sealed class SchemaConverter
             Version = Text(obj, "version") ?? Text(obj, "$version") ?? ""
         };
 
+        DiscoverEnums(obj);
         if (LooksLikeSchema(obj)) ConvertSchema(obj, name);
         else InferObject(obj, name, "");
         _model.Classes.AddRange(_classes.Values.OrderBy(x => x.Name));
@@ -33,9 +34,53 @@ internal sealed class SchemaConverter
         {
             if (root[containerName] is not JsonObject definitions) continue;
             foreach (var (name, node) in definitions)
-                if (node is JsonObject schema) ParseClass(TypeName(name), schema);
+                if (node is JsonObject schema) ParseDefinition(TypeName(name), schema);
         }
-        ParseClass(rootName, root);
+        ParseDefinition(rootName, root);
+    }
+
+    private void ParseDefinition(string name, JsonObject definition)
+    {
+        if (definition["enum"] is JsonArray values)
+        {
+            AddEnum(name, Text(definition, "description") ?? "", values.Select(x => x?.ToString() ?? "null"));
+            return;
+        }
+        ParseClass(name, definition);
+    }
+
+    private void DiscoverEnums(JsonObject obj)
+    {
+        foreach (var (key, node) in obj)
+        {
+            if (key.Equals("enums", StringComparison.OrdinalIgnoreCase) && node is JsonObject definitions)
+            {
+                foreach (var (name, value) in definitions)
+                    if (value is JsonObject definition)
+                        ParseLinkMlEnum(TypeName(name), definition);
+                continue;
+            }
+            if (node is JsonObject child) DiscoverEnums(child);
+        }
+    }
+
+    private void ParseLinkMlEnum(string name, JsonObject definition)
+    {
+        if (definition["permissible_values"] is not JsonObject values) return;
+        AddEnum(name, Text(definition, "description") ?? "", values.Select(x => x.Key));
+        var item = _enums[TypeName(name)];
+        foreach (var (value, node) in values)
+            if (node is JsonObject details && Text(details, "description") is { } description)
+                item.ValueDescriptions[value] = description;
+    }
+
+    private void AddEnum(string name, string description, IEnumerable<string> values)
+    {
+        name = TypeName(name);
+        if (_enums.ContainsKey(name)) return;
+        var item = new ImportEnum { Name = name, Description = description };
+        item.Values.AddRange(values);
+        _enums[name] = item;
     }
 
     private ImportClass ParseClass(string name, JsonObject schema)
@@ -74,7 +119,10 @@ internal sealed class SchemaConverter
     {
         string description = Text(schema, "description") ?? "";
         if (Text(schema, "$ref") is { } reference)
-            return Property(name, ReferenceName(reference), description, required, false, true);
+        {
+            string target = ReferenceName(reference);
+            return Property(name, target, description, required, false, !_enums.ContainsKey(target));
+        }
 
         if (schema["enum"] is JsonArray values)
         {
@@ -138,6 +186,7 @@ internal sealed class SchemaConverter
                         InferObject(definition, TypeName(definitionName), "Inferred from the '" + propertyName + "' definition container.");
                 continue;
             }
+            if (propertyName.Equals("enums", StringComparison.OrdinalIgnoreCase)) continue;
             if (IsClassMetadata(propertyName)) continue;
             cls.Properties.Add(InferProperty(name, propertyName, value));
         }
@@ -157,8 +206,10 @@ internal sealed class SchemaConverter
             bool required = Boolean(definition, "required") || Integer(definition, "minimum_cardinality") > 0;
             bool many = Boolean(definition, "multivalued") || Integer(definition, "maximum_cardinality") > 1;
             string primitive = LinkMlPrimitive(range);
-            bool reference = primitive.Length == 0;
-            cls.Properties.Add(Property(name, reference ? TypeName(range) : primitive,
+            string namedType = TypeName(range);
+            bool isEnum = _enums.ContainsKey(namedType);
+            bool reference = primitive.Length == 0 && !isEnum;
+            cls.Properties.Add(Property(name, primitive.Length == 0 ? namedType : primitive,
                 Text(definition, "description") ?? "", required, many, reference));
         }
     }

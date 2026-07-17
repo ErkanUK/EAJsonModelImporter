@@ -20,6 +20,7 @@ internal static class EaModelWriter
             foreach (var value in definition.Values)
             {
                 var literal = (EA.Attribute)element.Attributes.AddNew(value, "");
+                if (definition.ValueDescriptions.TryGetValue(value, out var description)) literal.Notes = description;
                 literal.Update();
             }
             element.Attributes.Refresh();

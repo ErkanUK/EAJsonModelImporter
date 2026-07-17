@@ -66,6 +66,62 @@ Assert(attributeModel.Classes.All(x => !x.Name.EndsWith("Attributes")), "attribu
 Assert(terminal.Properties.Any(x => x.Name == "description" && x.Type == "String" && !x.IsReference), "primitive attribute definition");
 Assert(terminal.Properties.Any(x => x.Name == "conductingEquipment" && x.Type == "ConductingEquipment" && x.IsReference && x.Required), "class range association definition");
 
+var namedEnums = JsonNode.Parse("""
+{
+  "$defs": {
+    "Priority": { "type": "string", "enum": ["low", "high"] }
+  },
+  "type": "object",
+  "properties": { "priority": { "$ref": "#/$defs/Priority" } }
+}
+""")!;
+var namedEnumModel = new SchemaConverter().Convert(namedEnums, "Task");
+Assert(namedEnumModel.Enums.Any(x => x.Name == "Priority" && x.Values.SequenceEqual(["low", "high"])), "named JSON Schema enum");
+Assert(namedEnumModel.Classes.All(x => x.Name != "Priority"), "named JSON Schema enum is not a class");
+Assert(namedEnumModel.Classes.Single(x => x.Name == "Task").Properties.Any(x => x.Name == "priority" && x.Type == "Priority" && !x.IsReference), "named JSON Schema enum attribute");
+
+var linkmlEnums = JsonNode.Parse("""
+{
+  "enums": {
+    "OperatingStatus": {
+      "description": "Current status",
+      "permissible_values": { "ON": { "description": "Active" }, "OFF": { "description": "Inactive" } }
+    }
+  },
+  "classes": {
+    "Device": {
+      "attributes": { "status": { "range": "OperatingStatus" } }
+    }
+  }
+}
+""")!;
+var linkmlEnumModel = new SchemaConverter().Convert(linkmlEnums, "Equipment");
+Assert(linkmlEnumModel.Enums.Any(x => x.Name == "OperatingStatus" && x.Values.SequenceEqual(["ON", "OFF"])), "LinkML permissible values enum");
+Assert(linkmlEnumModel.Enums.Single(x => x.Name == "OperatingStatus").ValueDescriptions["ON"] == "Active", "LinkML enum literal description");
+Assert(linkmlEnumModel.Classes.All(x => x.Name != "OperatingStatus"), "LinkML enum is not a class");
+Assert(linkmlEnumModel.Classes.Single(x => x.Name == "Device").Properties.Any(x => x.Name == "status" && x.Type == "OperatingStatus" && !x.IsReference), "LinkML enum attribute");
+
+var yamlEnum = SimpleYaml.Parse("""
+enums:
+  SmartMeterYNEnum:
+    description: SIMS smart meter indicator
+    permissible_values:
+      "Y":
+        description: Smart meter installed and active
+      "N":
+        description: Not a smart meter
+classes:
+  Meter:
+    attributes:
+      smart:
+        range: SmartMeterYNEnum
+""");
+var yamlEnumModel = new SchemaConverter().Convert(yamlEnum, "MeterModel");
+var smartMeterEnum = yamlEnumModel.Enums.Single(x => x.Name == "SmartMeterYNEnum");
+Assert(smartMeterEnum.Values.SequenceEqual(["Y", "N"]), "quoted YAML enum values");
+Assert(smartMeterEnum.ValueDescriptions["Y"] == "Smart meter installed and active", "YAML enum literal notes");
+Assert(yamlEnumModel.Classes.Single(x => x.Name == "Meter").Properties.Any(x => x.Name == "smart" && !x.IsReference), "YAML enum typed attribute");
+
 var yaml = """
 $schema: https://json-schema.org/draft/2020-12/schema
 title: Product Catalogue
