@@ -204,6 +204,7 @@ internal sealed class SchemaConverter
             if (IsClassMetadata(propertyName)) continue;
             cls.Properties.Add(InferProperty(name, propertyName, value));
         }
+        if (obj["unique_keys"] is JsonObject uniqueKeys) MarkUniqueKeys(cls, uniqueKeys);
         return cls;
     }
 
@@ -223,8 +224,21 @@ internal sealed class SchemaConverter
             string namedType = TypeName(range);
             bool isEnum = _enums.ContainsKey(namedType);
             bool reference = primitive.Length == 0 && !isEnum;
-            cls.Properties.Add(Property(name, primitive.Length == 0 ? namedType : primitive,
-                Text(definition, "description") ?? "", required, many, reference));
+            var property = Property(name, primitive.Length == 0 ? namedType : primitive,
+                Text(definition, "description") ?? "", required, many, reference);
+            property.Identifier = Boolean(definition, "identifier");
+            cls.Properties.Add(property);
+        }
+    }
+
+    private static void MarkUniqueKeys(ImportClass cls, JsonObject uniqueKeys)
+    {
+        foreach (var definition in uniqueKeys.Select(x => x.Value).OfType<JsonObject>())
+        {
+            if (definition["unique_key_slots"] is not JsonArray slots) continue;
+            var names = slots.Select(x => x?.GetValue<string>() ?? "").ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var property in cls.Properties)
+                if (names.Contains(property.Name)) property.Identifier = true;
         }
     }
 
@@ -285,6 +299,7 @@ internal sealed class SchemaConverter
         || name.Equals("abstract", StringComparison.OrdinalIgnoreCase)
         || name.Equals("mixins", StringComparison.OrdinalIgnoreCase)
         || name.Equals("annotations", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("unique_keys", StringComparison.OrdinalIgnoreCase)
         || name.Equals("slots", StringComparison.OrdinalIgnoreCase);
 
     private static bool Boolean(JsonObject obj, string name) => obj[name] is JsonValue value

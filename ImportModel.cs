@@ -33,4 +33,5 @@ internal sealed class ImportProperty
     public bool Required { get; init; }
     public bool Many { get; init; }
     public bool IsReference { get; init; }
+    public bool Identifier { get; set; }
 }

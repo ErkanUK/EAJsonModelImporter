@@ -53,6 +53,7 @@ internal static class EaModelWriter
 
                 var attribute = (EA.Attribute)element.Attributes.AddNew(property.Name, property.Type);
                 attribute.Notes = property.Description;
+                attribute.IsID = property.Identifier;
                 attribute.LowerBound = property.Required ? "1" : "0";
                 attribute.UpperBound = property.Many ? "*" : "1";
                 if (elements.TryGetValue(property.Type, out var classifier)) attribute.ClassifierID = classifier.ElementID;

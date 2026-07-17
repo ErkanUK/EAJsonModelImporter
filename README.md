@@ -55,6 +55,7 @@ The importer creates a new child package and a class diagram. It never overwrite
 | Optional property | Lower multiplicity `0` |
 | `enum` | UML Enumeration and literals |
 | LinkML `enums` / `permissible_values` | UML Enumeration and literals |
+| LinkML `identifier` / `unique_keys` | EA identifier attributes, including composite keys |
 | `allOf` reference | Generalization |
 | `oneOf` or `anyOf` references | Choice class |
 | `title` | Model or class name |

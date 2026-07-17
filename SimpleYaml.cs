@@ -83,6 +83,14 @@ internal static class SimpleYaml
         {
             try { return JsonNode.Parse(value.Replace("'", "\"")); } catch { /* treat as text */ }
         }
+        if (value.StartsWith('[') && value.EndsWith(']'))
+        {
+            var array = new JsonArray();
+            string content = value[1..^1].Trim();
+            if (content.Length == 0) return array;
+            foreach (var item in content.Split(',')) array.Add(Scalar(item.Trim()));
+            return array;
+        }
         if (value is "null" or "Null" or "NULL" or "~") return null;
         if (bool.TryParse(value, out var boolean)) return JsonValue.Create(boolean);
         if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer)) return JsonValue.Create(integer);

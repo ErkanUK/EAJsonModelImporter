@@ -1,6 +1,14 @@
 using System.Text.Json.Nodes;
 using EAJsonModelImporter;
 
+if (args.Length == 1)
+{
+    string path = Path.GetFullPath(args[0]);
+    var inspected = new SchemaConverter().Convert(SimpleYaml.Parse(File.ReadAllText(path)), Path.GetFileNameWithoutExtension(path));
+    Console.WriteLine($"Parsed {inspected.Name}: {inspected.Classes.Count} classes, {inspected.Enums.Count} enumerations, {inspected.Classes.Sum(x => x.Properties.Count)} properties/relationships.");
+    return;
+}
+
 var schema = JsonNode.Parse("""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -153,6 +161,27 @@ var substation = relationshipModel.Classes.Single(x => x.Name == "SecondarySubst
 Assert(relationshipModel.Classes.Select(x => x.Name).Order().SequenceEqual(["SecondarySubstation", "Transformer"]), "LinkML metadata does not create classes");
 Assert(substation.Properties.Any(x => x.Name == "transformers" && x.Type == "Transformer" && x.IsReference && x.Many), "LinkML relationship becomes association");
 Assert(relationshipModel.Classes.Count(x => x.Name.Contains("Transformer", StringComparison.OrdinalIgnoreCase)) == 1, "no plural relationship class duplicate");
+
+var linkmlKeys = SimpleYaml.Parse("""
+classes:
+  Reading:
+    unique_keys:
+      reading_key:
+        unique_key_slots: [meter_id, effective_from]
+    attributes:
+      meter_id:
+        range: string
+      effective_from:
+        range: datetime
+      sequence:
+        identifier: true
+        range: integer
+""");
+var keyModel = new SchemaConverter().Convert(linkmlKeys, "keys");
+var reading = keyModel.Classes.Single(x => x.Name == "Reading");
+Assert(reading.Properties.Single(x => x.Name == "meter_id").Identifier, "first composite key member");
+Assert(reading.Properties.Single(x => x.Name == "effective_from").Identifier, "second composite key member");
+Assert(reading.Properties.Single(x => x.Name == "sequence").Identifier, "LinkML identifier");
 
 var yaml = """
 $schema: https://json-schema.org/draft/2020-12/schema
