@@ -1,6 +1,6 @@
 # EA JSON/YAML Model Importer
 
-EA JSON/YAML Model Importer is a 64-bit add-in for Sparx Enterprise Architect 17. It converts JSON data, JSON Schema, YAML data, and YAML-based JSON Schema into an editable UML class model.
+Sparx Enterprise Architect JSON/YAML Model Importer is a 64-bit add-in for Sparx Enterprise Architect 17. It converts JSON data, JSON Schema, YAML data, and YAML-based JSON Schema into an editable UML class model.
 
 The importer creates native EA packages, classes, attributes, enumerations, associations, generalizations, multiplicities, notes, and a class diagram. The result can be edited using normal Enterprise Architect modelling tools.
 
