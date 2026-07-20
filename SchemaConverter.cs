@@ -19,6 +19,7 @@ internal sealed class SchemaConverter
             Description = Text(obj, "description") ?? "",
             Version = Text(obj, "version") ?? Text(obj, "$version") ?? ""
         };
+        ParseModelAnnotations(obj["annotations"] as JsonObject);
 
         DiscoverEnums(obj);
         if (LooksLikeSchema(obj)) ConvertSchema(obj, name);
@@ -27,6 +28,20 @@ internal sealed class SchemaConverter
         _model.Classes.AddRange(_classes.Values.OrderBy(x => x.Name));
         _model.Enums.AddRange(_enums.Values.OrderBy(x => x.Name));
         return _model;
+    }
+
+    private void ParseModelAnnotations(JsonObject? annotations)
+    {
+        if (annotations?["ea_domain_colors"] is not JsonObject colorAnnotation) return;
+        JsonObject colors = colorAnnotation["value"] as JsonObject ?? colorAnnotation;
+        foreach (var (domain, node) in colors)
+        {
+            string value = node is JsonObject wrapper && wrapper["value"] is not null
+                ? wrapper["value"]!.ToString()
+                : node?.ToString() ?? "";
+            value = value.Trim().Trim('"', '\'');
+            if (value.Length > 0) _model.DiagramDomainColors[CleanDomain(domain)] = value;
+        }
     }
 
     private void ConvertSchema(JsonObject root, string rootName)
@@ -181,6 +196,7 @@ internal sealed class SchemaConverter
         cls.Description = Text(obj, "description") ?? description;
         if (Text(obj, "is_a") is { } parent && !cls.Parents.Contains(TypeName(parent)))
             cls.Parents.Add(TypeName(parent));
+        ParseDiagramAnnotations(cls, obj["annotations"] as JsonObject);
         foreach (var (propertyName, value) in obj)
         {
             if (propertyName.Equals("attributes", StringComparison.OrdinalIgnoreCase) && value is JsonObject attributes)
@@ -207,6 +223,37 @@ internal sealed class SchemaConverter
         if (obj["unique_keys"] is JsonObject uniqueKeys) MarkUniqueKeys(cls, uniqueKeys);
         return cls;
     }
+
+    private static void ParseDiagramAnnotations(ImportClass cls, JsonObject? annotations)
+    {
+        if (annotations is null) return;
+        if (annotations["ea_domains"] is { } domainsNode)
+        {
+            IEnumerable<string> domains = domainsNode switch
+            {
+                JsonArray array => array.Select(x => x?.ToString() ?? ""),
+                JsonObject obj when obj["value"] is JsonArray array => array.Select(x => x?.ToString() ?? ""),
+                JsonObject obj when obj["value"] is not null => SplitDomains(obj["value"]!.ToString()),
+                _ => SplitDomains(domainsNode.ToString())
+            };
+            foreach (string domain in domains.Select(CleanDomain).Where(x => x.Length > 0))
+                if (!cls.DiagramDomains.Contains(domain, StringComparer.OrdinalIgnoreCase))
+                    cls.DiagramDomains.Add(domain);
+        }
+
+        JsonNode? orderNode = annotations["ea_order"];
+        if (orderNode is JsonObject orderObject) orderNode = orderObject["value"];
+        if (orderNode is JsonValue orderValue)
+        {
+            if (orderValue.TryGetValue<int>(out int order)) cls.DiagramOrder = order;
+            else if (int.TryParse(orderValue.ToString(), out order)) cls.DiagramOrder = order;
+        }
+    }
+
+    private static IEnumerable<string> SplitDomains(string value) =>
+        value.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static string CleanDomain(string value) => value.Trim().Trim('"', '\'');
 
     private void ParseAttributeDefinitions(ImportClass cls, JsonObject attributes)
     {

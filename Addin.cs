@@ -10,7 +10,7 @@ namespace EAJsonModelImporter;
 public sealed class Addin
 {
     private const string Menu = "-&JSON/YAML Model Importer";
-    private const string ImportItem = "Import into selected package…";
+    private const string ImportItem = "Import into selected package...";
     private const string AboutItem = "About JSON/YAML Model Importer";
 
     public string EA_Connect(EA.Repository repository) => "EAJsonModelImporter";
@@ -33,7 +33,7 @@ public sealed class Addin
     {
         if (itemName == AboutItem)
         {
-            MessageBox.Show("Imports JSON, JSON Schema, and YAML as an editable UML class model.",
+            MessageBox.Show("Imports JSON, JSON Schema, and YAML as an editable UML class model. LinkML ea_domains annotations generate structured overview and domain diagrams.",
                 "EA JSON/YAML Model Importer", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
@@ -55,8 +55,10 @@ public sealed class Addin
         {
             var root = InputLoader.Load(dialog.FileName);
             var model = new SchemaConverter().Convert(root, Path.GetFileNameWithoutExtension(dialog.FileName));
+            int domainCount = model.Classes.SelectMany(x => x.DiagramDomains).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            string diagramSummary = domainCount > 0 ? $", {domainCount} structured domain diagrams" : ", one grid diagram";
             var result = MessageBox.Show(
-                $"Create '{model.Name}' under '{target.Name}'?\n\n{model.Classes.Count} classes, {model.Enums.Count} enumerations",
+                $"Create '{model.Name}' under '{target.Name}'?\n\n{model.Classes.Count} classes, {model.Enums.Count} enumerations{diagramSummary}",
                 "Confirm UML import", MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
             if (result != DialogResult.OK) return;
             var package = EaModelWriter.Write(repository, target, model);

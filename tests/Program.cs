@@ -6,6 +6,12 @@ if (args.Length == 1)
     string path = Path.GetFullPath(args[0]);
     var inspected = new SchemaConverter().Convert(SimpleYaml.Parse(File.ReadAllText(path)), Path.GetFileNameWithoutExtension(path));
     Console.WriteLine($"Parsed {inspected.Name}: {inspected.Classes.Count} classes, {inspected.Enums.Count} enumerations, {inspected.Classes.Sum(x => x.Properties.Count)} properties/relationships.");
+    var annotated = inspected.Classes.Where(x => x.DiagramDomains.Count > 0).ToList();
+    Console.WriteLine($"Layout annotations: {annotated.Count}/{inspected.Classes.Count} classes annotated.");
+    foreach (var domain in annotated.SelectMany(x => x.DiagramDomains).Distinct(StringComparer.OrdinalIgnoreCase))
+    {
+        Console.WriteLine($"  {domain}: {annotated.Count(x => x.DiagramDomains.Contains(domain, StringComparer.OrdinalIgnoreCase))} classes");
+    }
     return;
 }
 
@@ -161,6 +167,38 @@ var substation = relationshipModel.Classes.Single(x => x.Name == "SecondarySubst
 Assert(relationshipModel.Classes.Select(x => x.Name).Order().SequenceEqual(["SecondarySubstation", "Transformer"]), "LinkML metadata does not create classes");
 Assert(substation.Properties.Any(x => x.Name == "transformers" && x.Type == "Transformer" && x.IsReference && x.Many), "LinkML relationship becomes association");
 Assert(relationshipModel.Classes.Count(x => x.Name.Contains("Transformer", StringComparison.OrdinalIgnoreCase)) == 1, "no plural relationship class duplicate");
+
+var diagramAnnotations = SimpleYaml.Parse("""
+annotations:
+  ea_domain_colors:
+    network_spine: "#DDEBF7"
+    asset_health: "#FFF2CC"
+classes:
+  Transformer:
+    annotations:
+      ea_domains: "network_spine,load_planning,asset_health"
+      ea_order: 20
+    attributes:
+      asset_tk:
+        range: string
+  Asset:
+    annotations:
+      ea_domains: [asset_health]
+      ea_order: 10
+""");
+var diagramModel = new SchemaConverter().Convert(diagramAnnotations, "diagram-layout");
+var diagramTransformer = diagramModel.Classes.Single(x => x.Name == "Transformer");
+var diagramAsset = diagramModel.Classes.Single(x => x.Name == "Asset");
+Assert(diagramTransformer.DiagramDomains.SequenceEqual(["network_spine", "load_planning", "asset_health"]), "comma-separated EA diagram domains");
+Assert(diagramTransformer.DiagramOrder == 20, "EA diagram order");
+Assert(diagramAsset.DiagramDomains.SequenceEqual(["asset_health"]), "array EA diagram domains");
+Assert(diagramAsset.DiagramOrder == 10, "second EA diagram order");
+Assert(diagramModel.DiagramDomainColors["network_spine"] == "#DDEBF7", "EA domain colour annotation");
+Assert(diagramModel.DiagramDomainColors["asset_health"] == "#FFF2CC", "second EA domain colour annotation");
+Assert(EaModelWriter.ParseEaColor("#FF0000") == 255, "EA red colour encoding");
+Assert(EaModelWriter.ParseEaColor("#00FF00") == 65280, "EA green colour encoding");
+Assert(EaModelWriter.ParseEaColor("#0000FF") == 16711680, "EA blue colour encoding");
+Assert(EaModelWriter.ParseEaColor("not-a-colour") is null, "invalid EA colour");
 
 var linkmlKeys = SimpleYaml.Parse("""
 classes:

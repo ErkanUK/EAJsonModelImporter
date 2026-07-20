@@ -56,6 +56,8 @@ The importer creates a new child package and a class diagram. It never overwrite
 | `enum` | UML Enumeration and literals |
 | LinkML `enums` / `permissible_values` | UML Enumeration and literals |
 | LinkML `identifier` / `unique_keys` | EA identifier attributes, including composite keys |
+| LinkML `annotations.ea_domains` | Domain overview and focused EA diagrams |
+| LinkML `annotations.ea_order` | Stable class order within generated domain diagrams |
 | `allOf` reference | Generalization |
 | `oneOf` or `anyOf` references | Choice class |
 | `title` | Model or class name |
@@ -93,10 +95,46 @@ properties:
 
 This produces a `ProductCatalogue` class associated with a `Product` class. The association has multiplicity `1..*`, while `code` and `price` become attributes of `Product`.
 
+## Structured EA diagram layouts
+
+LinkML classes can opt into one or more generated domain diagrams with EA-specific annotations:
+
+```yaml
+annotations:
+  ea_domain_colors:
+    network_spine: "#DDEBF7"
+    load_planning: "#E2EFDA"
+    asset_health: "#FFF2CC"
+    source_lineage: "#EAD1DC"
+
+classes:
+  Transformer:
+    annotations:
+      ea_domains: "network_spine,load_planning,asset_health"
+      ea_order: 10
+  UsagePoint:
+    annotations:
+      ea_domains: "network_spine,load_planning"
+      ea_order: 20
+```
+
+`ea_domains` accepts either a comma-separated string or an inline YAML array. The first domain is the class's primary domain in the overview. `ea_order` is an integer used to keep placement stable inside each domain.
+
+`ea_domain_colors` is an optional model-level mapping from domain name to a CSS-style hexadecimal colour. Both `#RRGGBB` and shorthand `#RGB` values are accepted. Invalid values fall back to the built-in pastel palette. The importer converts the web colour to EA's decimal BGR representation when creating each diagram object.
+
+When at least one class contains `ea_domains`, the importer creates:
+
+- a two-by-two domain overview;
+- one focused diagram per domain, with shared anchor classes included in every applicable view; and
+- a separate enumeration diagram.
+
+The preferred domain order is `network_spine`, `load_planning`, `asset_health`, and `source_lineage`. Additional domain names are supported and are placed after these. Classes without `ea_domains` are placed in an `Other` domain. Schemas without layout annotations retain the original single-grid diagram behavior.
+
 Additional examples are available in the `samples` directory:
 
 - `library.schema.json`
 - `catalogue.yaml`
+- `domain-layout.yaml`
 
 ## YAML support
 
@@ -121,7 +159,7 @@ Convert documents using these features to JSON before importing them.
 
 ## Repeated imports and model updates
 
-This MVP treats every import as a new model. It does not merge changes into a previously imported package. This protects existing EA content and makes testing reversible—delete the generated child package if the import is not required.
+This MVP treats every import as a new model. It does not merge changes into a previously imported package. This protects existing EA content and makes testing reversible: delete the generated child package if the import is not required.
 
 Future versions can add stable source identifiers, change comparison, and controlled model synchronization.
 
@@ -152,7 +190,7 @@ Structural definition containers named `classes`, `definitions`, `$defs`, or `sc
 
 Within a class definition, an `attributes` section is also flattened. Primitive ranges become UML attributes on the owning class, while ranges that name another class become associations. The importer therefore creates `Terminal` with its properties and associations rather than a separate `TerminalAttributes` class.
 
-LinkML `relationships` entries are imported as associations on their owning class. Schema metadata such as `prefixes`, `imports`, and `annotations` does not create UML classes.
+LinkML `relationships` entries are imported as associations on their owning class. Schema metadata such as `prefixes`, `imports`, and `annotations` does not create UML classes. The `ea_domains` and `ea_order` annotation values are additionally used for diagram layout.
 
 ## Building from source
 

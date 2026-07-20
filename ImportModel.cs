@@ -7,6 +7,7 @@ internal sealed class ImportModel
     public string Version { get; init; } = "";
     public List<ImportClass> Classes { get; } = [];
     public List<ImportEnum> Enums { get; } = [];
+    public Dictionary<string, string> DiagramDomainColors { get; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 internal sealed class ImportClass
@@ -15,6 +16,8 @@ internal sealed class ImportClass
     public string Description { get; set; } = "";
     public List<string> Parents { get; } = [];
     public List<ImportProperty> Properties { get; } = [];
+    public List<string> DiagramDomains { get; } = [];
+    public int DiagramOrder { get; set; } = int.MaxValue;
 }
 
 internal sealed class ImportEnum
