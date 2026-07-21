@@ -1,5 +1,8 @@
 # EA JSON/YAML Model Importer
 
+Disclaimer: This is an independent project and is not an official CGI product.  
+CGI is a trademark of CGI Inc. Sparx Systems and Enterprise Architect are trademarks of their respective owners.
+
 Sparx Enterprise Architect JSON/YAML Model Importer is a 64-bit add-in for Sparx Enterprise Architect 17. It converts JSON data, JSON Schema, YAML data, and YAML-based JSON Schema into an editable UML class model, with optional OWL ontology exports for Protégé and other semantic-web tools.
 
 The importer creates native EA packages, classes, attributes, enumerations, associations, generalizations, multiplicities, notes, and a class diagram. The result can be edited using normal Enterprise Architect modelling tools.
