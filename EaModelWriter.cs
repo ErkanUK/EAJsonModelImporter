@@ -82,87 +82,65 @@ internal static class EaModelWriter
     {
         if (!model.Classes.Any(x => x.DiagramDomains.Count > 0))
         {
-            CreateGridDiagram(repository, package, model.Name + " Class Model",
-                "Generated from JSON, JSON Schema, or YAML.", elements.Values, 0);
+            CreateSmartDiagram(repository, package, model.Name + " Class Model",
+                "Generated from JSON, JSON Schema, or YAML using relationship-aware smart layout.",
+                model, elements, null, true, _ => 0);
             return;
         }
 
         var domains = OrderedDomains(model);
-        CreateOverviewDiagram(repository, package, model, elements, domains);
+        var domainIndexes = domains.Select((domain, index) => (domain, index))
+            .ToDictionary(x => x.domain, x => x.index, StringComparer.OrdinalIgnoreCase);
+        CreateSmartDiagram(repository, package, model.Name + " - Overview",
+            "Model overview generated from ea_domains annotations using relationship-aware smart layout.",
+            model, elements, model.Classes.Select(x => x.Name), false, name =>
+            {
+                var definition = model.Classes.First(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                string domain = PrimaryDomain(definition);
+                return DomainColor(model, domain, domainIndexes[domain]);
+            });
         for (int domainIndex = 0; domainIndex < domains.Count; domainIndex++)
         {
             string domain = domains[domainIndex];
-            var definitions = model.Classes
+            var classNames = model.Classes
                 .Where(x => EffectiveDomains(x).Contains(domain, StringComparer.OrdinalIgnoreCase))
-                .OrderBy(x => x.DiagramOrder).ThenBy(x => x.Name)
-                .ToList();
-            var domainElements = definitions.Where(x => elements.ContainsKey(x.Name)).Select(x => elements[x.Name]);
-            CreateGridDiagram(repository, package, model.Name + " - " + DisplayDomain(domain),
-                "Generated from ea_domains LinkML annotations.", domainElements, DomainColor(model, domain, domainIndex));
+                .OrderBy(x => x.DiagramOrder).ThenBy(x => x.Name).Select(x => x.Name).ToList();
+            int color = DomainColor(model, domain, domainIndex);
+            CreateSmartDiagram(repository, package, model.Name + " - " + DisplayDomain(domain),
+                "Generated from ea_domains LinkML annotations using relationship-aware smart layout.",
+                model, elements, classNames, false, _ => color);
         }
 
         if (model.Enums.Count > 0)
         {
-            var enumElements = model.Enums.Where(x => elements.ContainsKey(x.Name)).Select(x => elements[x.Name]);
-            CreateGridDiagram(repository, package, model.Name + " - Enumerations",
-                "Enumerations are separated from domain views to reduce diagram clutter.", enumElements, 0);
+            CreateSmartDiagram(repository, package, model.Name + " - Enumerations",
+                "Enumerations are separated from domain views to reduce diagram clutter.",
+                model, elements, [], true, _ => 0);
         }
     }
 
-    private static void CreateOverviewDiagram(EA.Repository repository, EA.Package package, ImportModel model,
-        IReadOnlyDictionary<string, EA.Element> elements, IReadOnlyList<string> domains)
+    private static void CreateSmartDiagram(EA.Repository repository, EA.Package package, string name, string notes,
+        ImportModel model, IReadOnlyDictionary<string, EA.Element> elements, IEnumerable<string>? classNames,
+        bool includeEnums, Func<string, int> backgroundColor)
     {
-        var diagram = (EA.Diagram)package.Diagrams.AddNew(model.Name + " - Overview", "Logical");
-        diagram.Notes = "Four-domain overview generated from ea_domains annotations. " +
-            "Quadrants: top-left, top-right, bottom-left, bottom-right.";
-        diagram.Update();
-
-        const int quadrantWidth = 1040, quadrantHeight = 820;
-        for (int domainIndex = 0; domainIndex < domains.Count; domainIndex++)
-        {
-            string domain = domains[domainIndex];
-            var definitions = model.Classes
-                .Where(x => PrimaryDomain(x).Equals(domain, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(x => x.DiagramOrder).ThenBy(x => x.Name).ToList();
-            int quadrantColumn = domainIndex % 2, quadrantRow = domainIndex / 2;
-            int originX = 40 + quadrantColumn * quadrantWidth;
-            int originY = 60 + quadrantRow * quadrantHeight;
-            const int columns = 3;
-            for (int index = 0; index < definitions.Count; index++)
-            {
-                if (!elements.TryGetValue(definitions[index].Name, out var element)) continue;
-                int column = index % columns, row = index / columns;
-                AddDiagramObject(diagram, element, originX + column * 320, originY + row * 220,
-                    DomainColor(model, domain, domainIndex));
-            }
-        }
-        diagram.DiagramObjects.Refresh();
-        repository.SaveDiagram(diagram.DiagramID);
-    }
-
-    private static void CreateGridDiagram(EA.Repository repository, EA.Package package, string name, string notes,
-        IEnumerable<EA.Element> sourceElements, int backgroundColor)
-    {
-        var items = sourceElements.ToList();
         var diagram = (EA.Diagram)package.Diagrams.AddNew(name, "Logical");
         diagram.Notes = notes;
         diagram.Update();
-        int columns = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(items.Count)));
-        for (int index = 0; index < items.Count; index++)
+        var placements = SmartDiagramLayout.Arrange(model, classNames, includeEnums);
+        foreach (var (elementName, box) in placements)
         {
-            int column = index % columns, row = index / columns;
-            AddDiagramObject(diagram, items[index], 40 + column * 300, 40 + row * 220, backgroundColor);
+            if (!elements.TryGetValue(elementName, out var element)) continue;
+            AddDiagramObject(diagram, element, box, backgroundColor(elementName));
         }
         diagram.DiagramObjects.Refresh();
         repository.SaveDiagram(diagram.DiagramID);
     }
 
-    private static void AddDiagramObject(EA.Diagram diagram, EA.Element element, int left, int top,
+    private static void AddDiagramObject(EA.Diagram diagram, EA.Element element, DiagramBox box,
         int backgroundColor)
     {
-        int eaTop = -top;
         var diagramObject = (EA.DiagramObject)diagram.DiagramObjects.AddNew(
-            $"l={left};r={left + 240};t={eaTop};b={eaTop - 150};", "");
+            $"l={box.Left};r={box.Right};t={-box.Top};b={-box.Bottom};", "");
         diagramObject.ElementID = element.ElementID;
         if (backgroundColor != 0) diagramObject.BackgroundColor = backgroundColor;
         diagramObject.Update();
@@ -170,12 +148,10 @@ internal static class EaModelWriter
 
     private static List<string> OrderedDomains(ImportModel model)
     {
-        var observed = model.Classes.SelectMany(EffectiveDomains)
-            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        string[] preferred = ["network_spine", "load_planning", "asset_health", "source_lineage", "other"];
-        return preferred.Where(x => observed.Contains(x, StringComparer.OrdinalIgnoreCase))
-            .Concat(observed.Where(x => !preferred.Contains(x, StringComparer.OrdinalIgnoreCase)).Order())
-            .ToList();
+        return model.Classes.SelectMany(EffectiveDomains).Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(domain => model.Classes.Where(x => EffectiveDomains(x).Contains(domain, StringComparer.OrdinalIgnoreCase))
+                .Min(x => x.DiagramOrder))
+            .ThenBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     private static IEnumerable<string> EffectiveDomains(ImportClass definition) =>

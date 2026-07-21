@@ -5,7 +5,11 @@ if (args.Length == 1)
 {
     string path = Path.GetFullPath(args[0]);
     var inspected = new SchemaConverter().Convert(SimpleYaml.Parse(File.ReadAllText(path)), Path.GetFileNameWithoutExtension(path));
-    Console.WriteLine($"Parsed {inspected.Name}: {inspected.Classes.Count} classes, {inspected.Enums.Count} enumerations, {inspected.Classes.Sum(x => x.Properties.Count)} properties/relationships.");
+    var inspectedLayout = SmartDiagramLayout.Arrange(inspected);
+    bool hasOverlap = inspectedLayout.SelectMany((left, index) => inspectedLayout.Skip(index + 1)
+        .Select(right => Overlaps(left.Value, right.Value))).Any(x => x);
+    if (hasOverlap) throw new InvalidOperationException("Smart layout contains overlapping boxes.");
+    Console.WriteLine($"Parsed and laid out {inspected.Name}: {inspected.Classes.Count} classes, {inspected.Enums.Count} enumerations, {inspected.Classes.Sum(x => x.Properties.Count)} properties/relationships, no overlaps.");
     var annotated = inspected.Classes.Where(x => x.DiagramDomains.Count > 0).ToList();
     Console.WriteLine($"Layout annotations: {annotated.Count}/{inspected.Classes.Count} classes annotated.");
     foreach (var domain in annotated.SelectMany(x => x.DiagramDomains).Distinct(StringComparer.OrdinalIgnoreCase))
@@ -221,6 +225,28 @@ Assert(reading.Properties.Single(x => x.Name == "meter_id").Identifier, "first c
 Assert(reading.Properties.Single(x => x.Name == "effective_from").Identifier, "second composite key member");
 Assert(reading.Properties.Single(x => x.Name == "sequence").Identifier, "LinkML identifier");
 
+var layoutModel = new ImportModel { Name = "GenericModel" };
+var hub = new ImportClass { Name = "Hub" };
+hub.Properties.Add(new ImportProperty { Name = "first", Type = "First", IsReference = true });
+hub.Properties.Add(new ImportProperty { Name = "second", Type = "Second", IsReference = true });
+hub.Properties.Add(new ImportProperty { Name = "third", Type = "Third", IsReference = true });
+hub.Properties.Add(new ImportProperty { Name = "status", Type = "Status" });
+layoutModel.Classes.Add(hub);
+layoutModel.Classes.Add(new ImportClass { Name = "First" });
+layoutModel.Classes.Add(new ImportClass { Name = "Second" });
+layoutModel.Classes.Add(new ImportClass { Name = "Third" });
+layoutModel.Classes.Add(new ImportClass { Name = "Disconnected" });
+var statusEnum = new ImportEnum { Name = "Status" };
+statusEnum.Values.AddRange(["New", "Active", "Closed"]);
+layoutModel.Enums.Add(statusEnum);
+var smartLayout = SmartDiagramLayout.Arrange(layoutModel);
+Assert(smartLayout.Count == 6, "layout contains every class and enumeration");
+Assert(smartLayout["Hub"].Left < smartLayout["First"].Left, "most-connected hub starts the component layers");
+Assert(smartLayout["Status"].Left > layoutModel.Classes.Max(x => smartLayout[x.Name].Right), "enumerations are separated from classes");
+Assert(!smartLayout.SelectMany((left, index) => smartLayout.Skip(index + 1).Select(right => Overlaps(left.Value, right.Value))).Any(x => x), "layout boxes do not overlap");
+var repeatedLayout = SmartDiagramLayout.Arrange(layoutModel);
+Assert(smartLayout.All(x => repeatedLayout[x.Key] == x.Value), "layout is deterministic");
+
 var yaml = """
 $schema: https://json-schema.org/draft/2020-12/schema
 title: Product Catalogue
@@ -246,3 +272,6 @@ static void Assert(bool condition, string name)
 {
     if (!condition) throw new InvalidOperationException("Failed: " + name);
 }
+
+static bool Overlaps(DiagramBox first, DiagramBox second) =>
+    first.Left < second.Right && first.Right > second.Left && first.Top < second.Bottom && first.Bottom > second.Top;

@@ -40,6 +40,8 @@ The installer registers the add-in for the current Windows user under EA's 64-bi
 
 The importer creates a new child package and a class diagram. It never overwrites an existing package. If the generated package name already exists, a numeric suffix is added.
 
+Generated diagrams use a deterministic, relationship-aware layout. Connected classes are arranged in graph layers, disconnected components are grouped, box sizes reflect their contents, and enumerations are placed separately. The algorithm uses model topology only and has no domain-specific class-name rules.
+
 ## Mappings
 
 | JSON, JSON Schema or YAML | Enterprise Architect UML |
@@ -124,11 +126,11 @@ classes:
 
 When at least one class contains `ea_domains`, the importer creates:
 
-- a two-by-two domain overview;
+- a relationship-aware overview of all classes, coloured by primary domain;
 - one focused diagram per domain, with shared anchor classes included in every applicable view; and
 - a separate enumeration diagram.
 
-The preferred domain order is `network_spine`, `load_planning`, `asset_health`, and `source_lineage`. Additional domain names are supported and are placed after these. Classes without `ea_domains` are placed in an `Other` domain. Schemas without layout annotations retain the original single-grid diagram behavior.
+Domain names are unrestricted. Domains are ordered deterministically using their classes' lowest `ea_order` value and then the domain name; there are no built-in industry or class-name rules. Classes without `ea_domains` are placed in an `Other` domain. Schemas without layout annotations receive one relationship-aware smart diagram.
 
 Additional examples are available in the `samples` directory:
 
