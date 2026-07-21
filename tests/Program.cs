@@ -9,7 +9,13 @@ if (args.Length == 1)
     bool hasOverlap = inspectedLayout.SelectMany((left, index) => inspectedLayout.Skip(index + 1)
         .Select(right => Overlaps(left.Value, right.Value))).Any(x => x);
     if (hasOverlap) throw new InvalidOperationException("Smart layout contains overlapping boxes.");
+    string inspectedXmlOntology = OwlSerializer.Serialize(inspected, OwlSerialization.RdfXml);
+    var inspectedXml = new System.Xml.XmlDocument();
+    inspectedXml.LoadXml(inspectedXmlOntology);
+    string inspectedTurtle = OwlSerializer.Serialize(inspected, OwlSerialization.Turtle);
+    if (!inspectedTurtle.Contains("a owl:Ontology")) throw new InvalidOperationException("Turtle ontology declaration is missing.");
     Console.WriteLine($"Parsed and laid out {inspected.Name}: {inspected.Classes.Count} classes, {inspected.Enums.Count} enumerations, {inspected.Classes.Sum(x => x.Properties.Count)} properties/relationships, no overlaps.");
+    Console.WriteLine($"OWL exports validated: {inspectedXmlOntology.Length} RDF/XML characters, {inspectedTurtle.Length} Turtle characters.");
     var annotated = inspected.Classes.Where(x => x.DiagramDomains.Count > 0).ToList();
     Console.WriteLine($"Layout annotations: {annotated.Count}/{inspected.Classes.Count} classes annotated.");
     foreach (var domain in annotated.SelectMany(x => x.DiagramDomains).Distinct(StringComparer.OrdinalIgnoreCase))
@@ -246,6 +252,44 @@ Assert(smartLayout["Status"].Left > layoutModel.Classes.Max(x => smartLayout[x.N
 Assert(!smartLayout.SelectMany((left, index) => smartLayout.Skip(index + 1).Select(right => Overlaps(left.Value, right.Value))).Any(x => x), "layout boxes do not overlap");
 var repeatedLayout = SmartDiagramLayout.Arrange(layoutModel);
 Assert(smartLayout.All(x => repeatedLayout[x.Key] == x.Value), "layout is deterministic");
+
+var ontologyModel = new ImportModel
+{
+    Name = "People Model",
+    Description = "People & organisations",
+    Version = "2.0",
+    OntologyIri = "https://example.org/people"
+};
+var personClass = new ImportClass { Name = "Person", Description = "A person" };
+personClass.Properties.Add(new ImportProperty
+{
+    Name = "identifier", Type = "String", Required = true, Identifier = true, Description = "Stable identifier"
+});
+personClass.Properties.Add(new ImportProperty { Name = "status", Type = "Status" });
+var employeeClass = new ImportClass { Name = "Employee" };
+employeeClass.Parents.Add("Person");
+employeeClass.Properties.Add(new ImportProperty
+{
+    Name = "manager", Type = "Person", IsReference = true, Many = false, Description = "Line manager"
+});
+ontologyModel.Classes.AddRange([personClass, employeeClass]);
+var ontologyEnum = new ImportEnum { Name = "Status", Description = "Employment status" };
+ontologyEnum.Values.AddRange(["Active", "Inactive"]);
+ontologyModel.Enums.Add(ontologyEnum);
+string turtleOntology = OwlSerializer.Serialize(ontologyModel, OwlSerialization.Turtle);
+Assert(turtleOntology.Contains("a owl:Ontology"), "Turtle ontology declaration");
+Assert(turtleOntology.Contains("a owl:ObjectProperty"), "Turtle object property");
+Assert(turtleOntology.Contains("a owl:DatatypeProperty"), "Turtle datatype property");
+Assert(turtleOntology.Contains("owl:cardinality \"1\"^^xsd:nonNegativeInteger"), "Turtle cardinality restriction");
+Assert(turtleOntology.Contains("owl:oneOf"), "Turtle enumeration");
+Assert(turtleOntology.Contains("https://example.org/people#isIdentifier"), "Turtle identifier annotation");
+string xmlOntology = OwlSerializer.Serialize(ontologyModel, OwlSerialization.RdfXml);
+var ontologyXml = new System.Xml.XmlDocument();
+ontologyXml.LoadXml(xmlOntology);
+Assert(ontologyXml.DocumentElement?.LocalName == "RDF", "RDF/XML is well formed");
+Assert(xmlOntology.Contains("owl:ObjectProperty"), "RDF/XML object property");
+Assert(xmlOntology.Contains("owl:NamedIndividual"), "RDF/XML enumeration individuals");
+Assert(xmlOntology.Contains("owl:versionInfo"), "RDF/XML version metadata");
 
 var yaml = """
 $schema: https://json-schema.org/draft/2020-12/schema

@@ -5,6 +5,7 @@ internal sealed class ImportModel
     public required string Name { get; init; }
     public string Description { get; init; } = "";
     public string Version { get; init; } = "";
+    public string OntologyIri { get; init; } = "";
     public List<ImportClass> Classes { get; } = [];
     public List<ImportEnum> Enums { get; } = [];
     public Dictionary<string, string> DiagramDomainColors { get; } = new(StringComparer.OrdinalIgnoreCase);

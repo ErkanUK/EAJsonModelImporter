@@ -17,7 +17,8 @@ internal sealed class SchemaConverter
         {
             Name = name,
             Description = Text(obj, "description") ?? "",
-            Version = Text(obj, "version") ?? Text(obj, "$version") ?? ""
+            Version = Text(obj, "version") ?? Text(obj, "$version") ?? "",
+            OntologyIri = Text(obj, "id") ?? Text(obj, "$id") ?? ""
         };
         ParseModelAnnotations(obj["annotations"] as JsonObject);
 
