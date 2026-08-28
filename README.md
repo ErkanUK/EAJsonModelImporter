@@ -1,7 +1,7 @@
 # EA JSON/YAML Model Importer
 
-*** Update: The functionality has now been integrated into a single import/export tool: https://github.com/ErkanUK/EASemanticModelToolkit
-So this source will not be maintained any longer.***
+<mark>*** Update: The functionality has now been integrated into a single import/export tool: https://github.com/ErkanUK/EASemanticModelToolkit
+So this source will not be maintained any longer.***<mark>
 
 Disclaimer: This is an independent project and is not an official CGI product.  
 CGI is a trademark of CGI Inc. Sparx Systems and Enterprise Architect are trademarks of their respective owners.
